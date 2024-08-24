@@ -13,6 +13,9 @@ __status__ = "Development"
 import argparse
 import sys
 import uuid
+import time
+import os
+import signal
 
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
@@ -80,7 +83,7 @@ def sort_by_philo_id(events: list) -> dict:
     """
     Sorts a list of events by philosopher ID and groups events by each ID.
 
-    Each philosopher's events are stored in a dictionary, where the key is the philosopher's ID 
+    Each philosopher's events are stored in a dictionary, where the key is the philosopher's ID
     and the value is a list of tuples containing the timestamp and action.
 
     Args:
@@ -125,12 +128,12 @@ def render(
     """
     Renders a timeline of philosopher actions based on sorted event data.
 
-    Each philosopher's actions are visualized as a separate horizontal bar plot, showing 
-    the duration of each action over time. Annotations display the start and end times, 
+    Each philosopher's actions are visualized as a separate horizontal bar plot, showing
+    the duration of each action over time. Annotations display the start and end times,
     action duration, and the action performed. The plot includes an optional legend.
 
     Args:
-        s_events (dict): Dictionary where keys are philosopher IDs and values are lists 
+        s_events (dict): Dictionary where keys are philosopher IDs and values are lists
                          of tuples (timestamp, action).
         last_timestamp (int): The timestamp of the last event in the simulation.
         lgnd (bool, optional): Whether to display the legend.
@@ -193,8 +196,7 @@ def render(
             va="center",
         )
         axes[index].set_ylabel(f"{pid} -- ", rotation=0)
-        axes[index].grid(True, which="both", axis="x",
-                         linestyle="--", linewidth=0.5)
+        axes[index].grid(True, which="both", axis="x", linestyle="--", linewidth=0.5)
 
     axes[-1].set_xlabel("Time (ms)")
     if lgnd:
@@ -228,12 +230,12 @@ def analyze(s_events: dict) -> None:
     """
     Analyzes philosopher events to count occurrences of each action per philosopher.
 
-    The function counts how many times each philosopher performed actions such as eating, 
-    sleeping, and thinking. It also checks if any philosopher has died. The results are 
+    The function counts how many times each philosopher performed actions such as eating,
+    sleeping, and thinking. It also checks if any philosopher has died. The results are
     printed out for each philosopher.
 
     Args:
-        s_events (dict): Dictionary where keys are philosopher IDs and values are lists 
+        s_events (dict): Dictionary where keys are philosopher IDs and values are lists
                          of tuples (timestamp, action).
 
     Returns:
@@ -265,6 +267,72 @@ def analyze(s_events: dict) -> None:
             print(f"\tdied 1 times {LIGHT_RED}X({RESET}")
 
 
+def auto_sim(
+    exec: str,
+    n_philos: int,
+    t_die: int,
+    t_eat: int,
+    t_sleep: int,
+    max_meal: int,
+    to: int,
+) -> list:
+    output: str = ""
+    exec = exec if type(exec) == str else exec[0]
+    n_philos = str(n_philos) if type(n_philos) == int else str(n_philos[0])
+    t_die = str(t_die) if type(t_die) == int else str(t_die[0])
+    t_eat = str(t_eat) if type(t_eat) == int else str(t_eat[0])
+    t_sleep = str(t_sleep) if type(t_sleep) == int else str(t_sleep[0])
+    max_meal = str(max_meal) if type(max_meal) == int else str(max_meal[0])
+    if max_meal == "-1": max_meal = "999999"
+    timeout = to if type(to) == int else to[0]
+
+    r_stdout, w_stdout = os.pipe()
+    r_stderr, w_stderr = os.pipe()
+    pid = os.fork()
+    if pid == 0:  # Child process
+        # Redirect stdout and stderr to pipes
+        os.dup2(w_stdout, 1)
+        os.dup2(w_stderr, 2)
+        # Close the unused ends of the pipes
+        os.close(r_stdout)
+        os.close(r_stderr)
+        os.close(w_stdout)
+        os.close(w_stderr)
+        # Execute the command
+        os.execvp(exec, [exec, n_philos, t_die, t_eat, t_sleep, max_meal])
+    else:  # Parent process
+        # Check if the child process has actually started
+        pid_done, status = os.waitpid(pid, os.WNOHANG)
+        if pid_done == 0:
+            print(f"Child process {pid} has started successfully.")
+        else:
+            print(f"Child process {pid} terminated prematurely with status {status}.")
+        start_time = time.time()
+        while True:
+            # Check if the child process has terminated
+            pid_done, status = os.waitpid(pid, os.WNOHANG)
+            if pid_done:
+                break
+            # Check if the timeout has been exceeded
+            elapsed_time = time.time() - start_time
+            if elapsed_time > timeout:
+                os.kill(pid, signal.SIGTERM)
+                os.waitpid(pid, 0)
+                break
+            time.sleep(0.1)
+        # Close the unused ends of the pipes in the parent
+        os.close(w_stdout)
+        os.close(w_stderr)
+        # Read the output from the pipes
+        stdout = os.read(r_stdout, 4096).decode('utf-8')
+        stderr = os.read(r_stderr, 4096).decode('utf-8')
+        # Close the reading ends
+        os.close(r_stdout)
+        os.close(r_stderr)
+        print(stdout)
+        return stdout.splitlines()
+
+
 def parse_input():
     parser = argparse.ArgumentParser(
         prog=f"{YELLOW}zeno{RESET}",
@@ -291,13 +359,13 @@ def parse_input():
         "--save",
         action="store_true",
         help=f"-- {GREEN}Save simulation output to a file{RESET}",
-        dest="save"
+        dest="save",
     )
     parser.add_argument(
         "--legend-off",
         action="store_false",
         help=f"-- {GREEN}Disable plot legend{RESET}",
-        dest="legend"
+        dest="legend",
     )
     parser.add_argument(
         "-P",
@@ -305,6 +373,22 @@ def parse_input():
         help=f"-- {GREEN}Accept input from pipe. "
         + f"If -P flag is not specified, zeno would run the simulation automatically with specified settings (below){RESET}",
         dest="from_pipe",
+    )
+    parser.add_argument(
+        "-exec",
+        nargs=1,
+        default="philo",
+        type=str,
+        help=f"-- {GREEN}Name of the executable{RESET}",
+        dest="exec",
+    )
+    parser.add_argument(
+        "-to",
+        nargs=1,
+        default=15,
+        type=int,
+        help=f"-- {GREEN}Timeout for auto-simulation{RESET}",
+        dest="timeout",
     )
     parser.add_argument(
         "-np",
@@ -350,10 +434,14 @@ def parse_input():
 
 
 if __name__ == "__main__":
-    print(f"{BLINK}{YELLOW}WARNING{RESET}{YELLOW}: zeno doesn't support auto-simulation yet.\n\
-You have to pipe output of your philos to the script and run it with `-P` flag.{RESET}")
-    print(f"{BLINK}{YELLOW}WARNING{RESET}{YELLOW}: visualizer is not yet optimized.\n\
-I don't recommend to run it with more than 20 philos{RESET}")
+    print(
+        f"{BLINK}{YELLOW}WARNING{RESET}{YELLOW}: zeno doesn't support auto-simulation yet.\n\
+You have to pipe output of your philos to the script and run it with `-P` flag.{RESET}"
+    )
+    print(
+        f"{BLINK}{YELLOW}WARNING{RESET}{YELLOW}: visualizer is not yet optimized.\n\
+I don't recommend to run it with more than 20 philos{RESET}"
+    )
 
     args = vars(parse_input())
     output = None
@@ -364,7 +452,15 @@ I don't recommend to run it with more than 20 philos{RESET}")
             print(f"{RED}Error: no output of the program{RESET}")
             exit(1)
     else:  # TODO: remove when auto-sim feature will be ready
-        exit(1)
+        output = auto_sim(
+            args["exec"],
+            args["num"],
+            args["t_die"],
+            args["t_eat"],
+            args["t_sleep"],
+            args["max_meal"],
+            args["timeout"],
+        )
 
     if output is None:
         print(f"{RED}Error: no output of the program{RESET}")
@@ -383,5 +479,7 @@ I don't recommend to run it with more than 20 philos{RESET}")
         print(f"Log of the simulation saved in `philo_output_{sim_uid[:8]}`")
 
     analyze(s_events)
-    print(f"{BLINK}{CYAN}TIP{RESET}{CYAN}: you can maximize the window with simulation visualization for better result{RESET}")
+    print(
+        f"{BLINK}{CYAN}TIP{RESET}{CYAN}: you can maximize the window with simulation visualization for better result{RESET}"
+    )
     render(s_events, get_last_timestamp(output), args["legend"], sim_uid)
