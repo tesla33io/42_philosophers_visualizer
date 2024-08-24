@@ -180,7 +180,7 @@ def render(
         elif last_action == "died":
             last_duration = 0
             axes[index].broken_barh(
-                [(last_time, last_duration)],
+                [(last_time, 5)],
                 (0, 1),
                 facecolors=action_colors[last_action],
             )
