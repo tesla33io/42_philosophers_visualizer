@@ -37,3 +37,8 @@ Currently, Zeno supports only 'pipe' mode. To use the script, execute your philo
 The `-P` flag is mandatory in this case.
 
 Note that Zeno cannot interrupt your simulation, so you should specify a maximum number of meals for your program to terminate properly and redirect the output to the script.
+
+Example:
+
+![./philo 5 800 200 200 7](https://raw.githubusercontent.com/tesla33io/42_philosophers_visualizer/main/example.png)
+
