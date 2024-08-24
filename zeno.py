@@ -71,7 +71,7 @@ def parse_events(lines: list) -> list:
             action = parts[2].replace("\\n", "")
             events.append((timestamp, id, action))
         except ValueError:
-            print(f"{RED}Error: `{line}' is not a part of expected input")
+            print(f"{RED}Error: `{line}' is not a part of expected input{RESET}")
             exit(1)
     return events
 
@@ -215,7 +215,10 @@ def render(
     try:
         manager.window.state("zoomed")  # For TkAgg backend
     except AttributeError:
-        manager.window.showMaximized()  # For Qt5Agg or Qt4Agg backends
+        try:
+            manager.window.showMaximized()  # For Qt5Agg or Qt4Agg backends
+        except AttributeError:
+            pass
 
     plt.tight_layout(h_pad=0.000)
     plt.show()
@@ -265,10 +268,8 @@ def analyze(s_events: dict) -> None:
 def parse_input():
     parser = argparse.ArgumentParser(
         prog=f"{YELLOW}zeno{RESET}",
-        description=f"Zeno (of Citium) [v{
-            __version__}] visualizes the progress of the philosophers' simulation.",
-        epilog=f"{CYAN}“Be tolerant with others and strict with yourself.”{
-            RESET} – Marcus Aurelius",
+        description=f"Zeno (of Citium) [v{__version__}] visualizes the progress of the philosophers' simulation.",
+        epilog=f"{CYAN}“Be tolerant with others and strict with yourself.”{RESET} – Marcus Aurelius",
         add_help=False,
     )
     parser.add_argument(
@@ -302,8 +303,7 @@ def parse_input():
         "-P",
         action="store_true",
         help=f"-- {GREEN}Accept input from pipe. "
-        + f"If -P flag is not specified, zeno would run the simulation automatically with specified settings (below){
-            RESET}",
+        + f"If -P flag is not specified, zeno would run the simulation automatically with specified settings (below){RESET}",
         dest="from_pipe",
     )
     parser.add_argument(
