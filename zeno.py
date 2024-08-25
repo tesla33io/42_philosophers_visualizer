@@ -5,7 +5,7 @@ Visualization tool for the 42 `Philosophers` project
 """
 
 __author__ = "Artem (a.k.a tesla33io)"
-__version__ = "1.0 (beta)"
+__version__ = "1.1"
 __maintainer__ = "Artem"
 __email__ = "52202562+tesla33io@users.noreply.github.com"
 __status__ = "Development"
@@ -428,10 +428,9 @@ def parse_input():
 
 
 if __name__ == "__main__":
-    print(WARN_NOT_OPTIMIZED)
-
     args = vars(parse_input())
     output = None
+    print(WARN_NOT_OPTIMIZED)
 
     if args["from_pipe"]:
         output = sys.stdin.readlines()
