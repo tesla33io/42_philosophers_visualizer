@@ -13,6 +13,8 @@ __status__ = "Development"
 import argparse
 import sys
 import uuid
+import subprocess as sp
+import io
 
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
@@ -41,6 +43,22 @@ BLINK = "\033[5m"
 NEGATIVE = "\033[7m"
 CROSSED = "\033[9m"
 RESET = "\033[0m"
+
+ERR_NO_INPUT = f"""
+{RED}{BOLD}Error: no input was recived
+{LIGHT_BLUE}Maybe something went wrong during auto-simulation :(
+Try saving output of your simulation and manualy run the script:
+{LIGHT_GREEN}./philo ... > `file_with_sim_output`; ./zeno -P < `file_with_sim_outpu`{RESET}
+"""
+
+WARN_NOT_OPTIMIZED = f"""
+{YELLOW}WARNING: visualizer is not yet optimized.
+I don't recommend to run it with more than 20 philos{RESET}
+"""
+
+WARN_TIMEOUT_TOO_SMALL = f"""
+{YELLOW}WARNING: timeout was too small and was therefore changed to 10 seconds{RESET}
+"""
 
 
 def parse_events(lines: list) -> list:
@@ -80,7 +98,7 @@ def sort_by_philo_id(events: list) -> dict:
     """
     Sorts a list of events by philosopher ID and groups events by each ID.
 
-    Each philosopher's events are stored in a dictionary, where the key is the philosopher's ID 
+    Each philosopher's events are stored in a dictionary, where the key is the philosopher's ID
     and the value is a list of tuples containing the timestamp and action.
 
     Args:
@@ -120,20 +138,25 @@ action_colors = {
 
 
 def render(
-    s_events: dict, last_timestamp: int, lgnd: bool = False, sim_uid: str = None
+    s_events: dict,
+    last_timestamp: int,
+    lgnd: bool = False,
+    labels: bool = False,
+    sim_uid: str = None,
 ) -> None:
     """
     Renders a timeline of philosopher actions based on sorted event data.
 
-    Each philosopher's actions are visualized as a separate horizontal bar plot, showing 
-    the duration of each action over time. Annotations display the start and end times, 
+    Each philosopher's actions are visualized as a separate horizontal bar plot, showing
+    the duration of each action over time. Annotations display the start and end times,
     action duration, and the action performed. The plot includes an optional legend.
 
     Args:
-        s_events (dict): Dictionary where keys are philosopher IDs and values are lists 
+        s_events (dict): Dictionary where keys are philosopher IDs and values are lists
                          of tuples (timestamp, action).
         last_timestamp (int): The timestamp of the last event in the simulation.
         lgnd (bool, optional): Whether to display the legend.
+        labels (bool, optional): Whether to display action labels.
         sim_uid (str, optional): Unique identifier for the simulation, used as the plot window title.
 
     Returns:
@@ -159,14 +182,15 @@ def render(
                 facecolors=action_colors[action],
                 mouseover=True,
             )
-            axes[index].annotate(
-                f"{start_time} - {end_time}\n{duration} ms\n{action}",
-                (start_time + duration / 2, 0.5),
-                color="black",
-                fontsize=8,
-                ha="center",
-                va="center",
-            )
+            if labels:
+                axes[index].annotate(
+                    f"{start_time} - {end_time}\n{duration} ms\n{action}",
+                    (start_time + duration / 2, 0.5),
+                    color="black",
+                    fontsize=8,
+                    ha="center",
+                    va="center",
+                )
         last_time = events[-1][0]
         last_action = events[-1][1]
         last_duration = 0
@@ -184,17 +208,17 @@ def render(
                 (0, 1),
                 facecolors=action_colors[last_action],
             )
-        axes[index].annotate(
-            f"{last_time} - {last_timestamp}\n{last_duration} ms\n{last_action}",
-            (last_time + last_duration / 2, 0.5),
-            color="black",
-            fontsize=8,
-            ha="center",
-            va="center",
-        )
+        if labels:
+            axes[index].annotate(
+                f"{last_time} - {last_timestamp}\n{last_duration} ms\n{last_action}",
+                (last_time + last_duration / 2, 0.5),
+                color="black",
+                fontsize=8,
+                ha="center",
+                va="center",
+            )
         axes[index].set_ylabel(f"{pid} -- ", rotation=0)
-        axes[index].grid(True, which="both", axis="x",
-                         linestyle="--", linewidth=0.5)
+        axes[index].grid(True, which="both", axis="x", linestyle="--", linewidth=0.5)
 
     axes[-1].set_xlabel("Time (ms)")
     if lgnd:
@@ -228,12 +252,12 @@ def analyze(s_events: dict) -> None:
     """
     Analyzes philosopher events to count occurrences of each action per philosopher.
 
-    The function counts how many times each philosopher performed actions such as eating, 
-    sleeping, and thinking. It also checks if any philosopher has died. The results are 
+    The function counts how many times each philosopher performed actions such as eating,
+    sleeping, and thinking. It also checks if any philosopher has died. The results are
     printed out for each philosopher.
 
     Args:
-        s_events (dict): Dictionary where keys are philosopher IDs and values are lists 
+        s_events (dict): Dictionary where keys are philosopher IDs and values are lists
                          of tuples (timestamp, action).
 
     Returns:
@@ -265,6 +289,38 @@ def analyze(s_events: dict) -> None:
             print(f"\tdied 1 times {LIGHT_RED}X({RESET}")
 
 
+def auto_sim(
+    exec: str,
+    n_philos: int,
+    t_die: int,
+    t_eat: int,
+    t_sleep: int,
+    max_meal: int,
+    to: int,
+) -> list:
+    exec = exec if isinstance(exec, str) else exec[0]
+    n_philos = str(n_philos) if isinstance(n_philos, int) else str(n_philos[0])
+    t_die = str(t_die) if isinstance(t_die, int) else str(t_die[0])
+    t_eat = str(t_eat) if isinstance(t_eat, int) else str(t_eat[0])
+    t_sleep = str(t_sleep) if isinstance(t_sleep, int) else str(t_sleep[0])
+    max_meal = str(max_meal) if isinstance(max_meal, int) else str(max_meal[0])
+    if max_meal == "-1":
+        max_meal = "9999999"
+    timeout = str(to) if isinstance(to, int) else str(to[0])
+    if int(timeout) <= 9:
+        print(WARN_TIMEOUT_TOO_SMALL)
+        to = "10"
+    print(
+        f"{GREEN}Simulation: {LIGHT_GREEN}{exec} {n_philos} {t_die} {t_eat} {t_sleep} {max_meal}{RESET}"
+    )
+    simproc = sp.run(
+        ["timeout", timeout, exec, n_philos, t_die, t_eat, t_sleep, max_meal],
+        text=True,
+        capture_output=True,
+    )
+    return simproc.stdout.splitlines()[0:-2]
+
+
 def parse_input():
     parser = argparse.ArgumentParser(
         prog=f"{YELLOW}zeno{RESET}",
@@ -291,13 +347,19 @@ def parse_input():
         "--save",
         action="store_true",
         help=f"-- {GREEN}Save simulation output to a file{RESET}",
-        dest="save"
+        dest="save",
     )
     parser.add_argument(
         "--legend-off",
         action="store_false",
         help=f"-- {GREEN}Disable plot legend{RESET}",
-        dest="legend"
+        dest="legend",
+    )
+    parser.add_argument(
+        "--labels-off",
+        action="store_false",
+        help=f"-- {GREEN}Disable labels in the plot{RESET}",
+        dest="labels",
     )
     parser.add_argument(
         "-P",
@@ -305,6 +367,22 @@ def parse_input():
         help=f"-- {GREEN}Accept input from pipe. "
         + f"If -P flag is not specified, zeno would run the simulation automatically with specified settings (below){RESET}",
         dest="from_pipe",
+    )
+    parser.add_argument(
+        "-exec",
+        nargs=1,
+        default="philo",
+        type=str,
+        help=f"-- {GREEN}Name of the executable{RESET}",
+        dest="exec",
+    )
+    parser.add_argument(
+        "-to",
+        nargs=1,
+        default=15,
+        type=int,
+        help=f"-- {GREEN}Timeout for auto-simulation{RESET}",
+        dest="timeout",
     )
     parser.add_argument(
         "-np",
@@ -350,24 +428,25 @@ def parse_input():
 
 
 if __name__ == "__main__":
-    print(f"{BLINK}{YELLOW}WARNING{RESET}{YELLOW}: zeno doesn't support auto-simulation yet.\n\
-You have to pipe output of your philos to the script and run it with `-P` flag.{RESET}")
-    print(f"{BLINK}{YELLOW}WARNING{RESET}{YELLOW}: visualizer is not yet optimized.\n\
-I don't recommend to run it with more than 20 philos{RESET}")
+    print(WARN_NOT_OPTIMIZED)
 
     args = vars(parse_input())
     output = None
 
     if args["from_pipe"]:
         output = sys.stdin.readlines()
-        if len(output) <= 0:
-            print(f"{RED}Error: no output of the program{RESET}")
-            exit(1)
-    else:  # TODO: remove when auto-sim feature will be ready
-        exit(1)
-
-    if output is None:
-        print(f"{RED}Error: no output of the program{RESET}")
+    else:
+        output = auto_sim(
+            args["exec"],
+            args["num"],
+            args["t_die"],
+            args["t_eat"],
+            args["t_sleep"],
+            args["max_meal"],
+            args["timeout"],
+        )
+    if len(output) <= 0 or output is None:
+        print(ERR_NO_INPUT)
         exit(1)
 
     sim_uid = str(uuid.uuid4())
@@ -383,5 +462,9 @@ I don't recommend to run it with more than 20 philos{RESET}")
         print(f"Log of the simulation saved in `philo_output_{sim_uid[:8]}`")
 
     analyze(s_events)
-    print(f"{BLINK}{CYAN}TIP{RESET}{CYAN}: you can maximize the window with simulation visualization for better result{RESET}")
-    render(s_events, get_last_timestamp(output), args["legend"], sim_uid)
+    print(
+        f"{BLINK}{CYAN}TIP{RESET}{CYAN}: you can maximize the window with simulation visualization for better result{RESET}"
+    )
+    render(
+        s_events, get_last_timestamp(output), args["legend"], args["labels"], sim_uid
+    )
