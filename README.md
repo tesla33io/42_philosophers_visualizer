@@ -1,4 +1,9 @@
-# [Zeno](https://en.wikipedia.org/wiki/Zeno_of_Citium)
+<div align="center">
+  <h1><a href="https://en.wikipedia.org/wiki/Zeno_of_Citium">Zeno</a></h1>
+  <img alt="GitHub Release" src="https://img.shields.io/github/v/release/tesla33io/42_philosophers_visualizer?style=flat">
+  <img alt="GitHub Release Date" src="https://img.shields.io/github/release-date/tesla33io/42_philosophers_visualizer?style=flat">
+  <hr>
+</div>
 
 A Python script for parsing, visualizing, and analyzing event logs related to philosophers' actions in a simulation.
 
